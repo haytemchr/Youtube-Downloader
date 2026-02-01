@@ -20,7 +20,7 @@ Un téléchargeur YouTube simple et sécurisé avec interface graphique, créé 
 
 1. **Cloner le repository**
    ```bash
-   git clone https://github.com/votre-username/youtube-downloader.git
+   git clone https://github.com/haytemchr/youtube-downloader.git
    cd youtube-downloader
    ```
 
