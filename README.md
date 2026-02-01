@@ -1,99 +1,77 @@
 # 🎵 YouTube Downloader
 
-Un téléchargeur YouTube simple et sécurisé avec interface graphique, créé avec Python et CustomTkinter.
+![Interface du Logiciel](screenshot.png)
+
+Un téléchargeur YouTube simple, rapide et sans publicité, doté d'une interface graphique moderne. Développé en Python avec **CustomTkinter** et **yt-dlp**.
 
 ## ✨ Fonctionnalités
 
-- 🎬 **Téléchargement de vidéos** en format MP4
-- 🎵 **Téléchargement audio** en format MP3
-- 📋 **Support des playlists** YouTube
-- ⚙️ **Configuration facile** via interface graphique
-- 📁 **Choix du dossier** de téléchargement
+- 🎬 **Téléchargement Vidéo** : Supporte la Haute Définition (720p, 1080p, 4K...) grâce à `yt-dlp`.
+- 🎵 **Téléchargement Audio** : Conversion automatique en MP3.
+- 📋 **Support des Playlists** : Téléchargez toute une liste de lecture en un clic.
+- ⚙️ **Interface Moderne** : Thème sombre (Dark Mode) et UX soignée.
+- 🚀 **Performance** : Utilisation de `yt-dlp` pour une fiabilité maximale.
 
 ## 🚀 Installation
 
 ### Prérequis
-- Python 3.7 ou supérieur
-- pip (gestionnaire de paquets Python)
+- **Python 3.10** ou supérieur
+- **FFmpeg** (Fortement recommandé pour la fusion audio/vidéo et la conversion MP3)
 
 ### Étapes d'installation
 
-1. **Cloner le repository**
-   ```bash
-   git clone https://github.com/haytemchr/youtube-downloader.git
-   cd youtube-downloader
-   ```
+1. **Cloner le projet**
+   git clone https://github.com/haytemchr/Youtube-Downloader.git
+   cd Youtube-Downloader
 
 2. **Installer les dépendances**
-   ```bash
    pip install -r requirements.txt
-   ```
 
 3. **Lancer l'application**
-   ```bash
    python youtube_downloader.py
-   ```
 
-## 🔑 Configuration de la clé API YouTube
+---
 
-### Pourquoi une clé API ?
-- **Vidéos uniques** : Pas besoin de clé API
-- **Playlists** : Nécessite une clé API YouTube
+## ⚙️ Configuration (FFmpeg & API)
 
-### Comment obtenir une clé API ?
+### 1. FFmpeg (Essentiel pour la qualité)
+Pour télécharger en **1080p+** ou convertir en **MP3**, le logiciel a besoin de FFmpeg.
+1. Téléchargez FFmpeg (version "essentials") sur [ffmpeg.org](https://ffmpeg.org/download.html).
+2. Décompressez le dossier.
+3. Dans l'application, allez dans **Paramètres** et indiquez le chemin du dossier `bin` (ex: `C:\\ffmpeg\\bin`).
 
-1. **Allez sur** [Google Cloud Console](https://console.cloud.google.com/)
-2. **Créez un projet** ou sélectionnez-en un existant
-3. **Activez l'API YouTube Data v3**
-4. **Créez des identifiants** (clé API)
-5. **Copiez la clé** et collez-la dans l'application
+### 2. Clé API YouTube (Optionnelle)
+- **Vidéos uniques** : Pas besoin de clé.
+- **Playlists** : La clé est recommandée pour charger les playlists plus rapidement et éviter les blocages, mais le logiciel peut fonctionner sans (en mode scraping).
 
-### Configuration dans l'application
+**Comment obtenir une clé (si besoin) :**
+1. Allez sur [Google Cloud Console](https://console.cloud.google.com/).
+2. Activez l'API **YouTube Data v3**.
+3. Copiez la clé API et collez-la dans les **Paramètres** de l'application.
 
-1. **Lancez l'application** - L'écran de configuration s'affiche automatiquement
-2. **Collez votre clé API** dans le champ prévu
-3. **Cliquez sur "Sauvegarder"**
-4. **Ou cliquez sur "Paramètres"** plus tard pour modifier
+---
 
 ## 📖 Utilisation
 
-### Télécharger une vidéo unique
+1. **Collez l'URL** d'une vidéo ou d'une playlist.
+2. Cliquez sur **Vérifier** pour voir les qualités disponibles.
+3. Choisissez **Vidéo (MP4)** ou **Audio (MP3)**.
+4. Sélectionnez la **Qualité** et le **Dossier de destination**.
+5. Cliquez sur **Télécharger** et profitez !
 
-1. **Collez l'URL YouTube** dans le champ
-2. **Sélectionnez "Vidéo unique"**
-3. **Choisissez le format** (MP4 ou MP3)
-4. **Sélectionnez le dossier** de téléchargement
-5. **Cliquez sur "Télécharger"**
+## 🛠️ Stack Technique
 
-### Télécharger une playlist
-
-1. **Collez l'URL de la playlist** YouTube
-2. **Sélectionnez "Playlist"**
-3. **Assurez-vous d'avoir configuré** votre clé API
-4. **Choisissez le format** et le dossier
-5. **Cliquez sur "Télécharger"**
-
-## 🛠️ Dépendances
-
-- `customtkinter` - Interface graphique moderne
-- `pytubefix` - Téléchargement YouTube
-- `requests` - Requêtes HTTP
-- `moviepy` - Conversion audio/vidéo
-- `json` - Gestion de la configuration
+- **Langage** : Python 🐍
+- **GUI** : CustomTkinter
+- **Moteur** : yt-dlp (fork de youtube-dl)
+- **API** : YouTube Data API v3 (via Requests)
 
 ## 🐛 Dépannage
 
-### Erreur "Clé API introuvable"
-- Configurez votre clé API via le bouton "Paramètres"
-- Vérifiez que la clé est valide
-
-### Erreur de téléchargement
-- Vérifiez que l'URL YouTube est correcte
-- Assurez-vous que la vidéo est publique
-- Essayez une autre vidéo
-
-### Problème de conversion MP3
-- Vérifiez que `ffmpeg` est installé sur votre système
+- **Erreur de fusion / Qualité faible ?**
+  Vérifiez que vous avez bien installé FFmpeg et configuré le chemin dans les paramètres.
+- **Le téléchargement ne démarre pas ?**
+  Vérifiez votre connexion internet et que l'URL est valide (publique).
 
 ## 📝 Licence
 
@@ -101,15 +79,5 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## 👨‍💻 Auteur
 
-**Haytem CHRYAT**
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! N'hésitez pas à :
-- Signaler des bugs
-- Proposer des améliorations
-- Créer des pull requests
-
-## ⚠️ Avertissement
-
-Ce logiciel est destiné à un usage personnel et éducatif. Respectez les droits d'auteur et les conditions d'utilisation de YouTube. 
+Créé par **Haytem CHRYAT**.
+N'hésitez pas à laisser une ⭐ sur le repo si le projet vous plaît !
