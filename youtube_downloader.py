@@ -9,6 +9,9 @@ import queue
 import glob
 import json
 import subprocess
+import traceback
+
+# a faire: rajouter un bouton pour annuler le téléchargement
 
 try:
     import customtkinter as ctk
@@ -129,7 +132,7 @@ class ConfigScreen:
                     self.api_key.set(config.get('api_key', ''))
                     self.ffmpeg_path.set(config.get('ffmpeg_path', ''))
         except Exception as e:
-            print(f"Erreur lors du chargement de la configuration: {e}")
+            print("Erreur lors du chargement de la configuration: " + str(e))
 
     def save_config(self):
         try:
@@ -237,13 +240,13 @@ class YouTubeDownloader:
                     self.api_key.set(config.get('api_key', ''))
                     self.ffmpeg_path.set(config.get('ffmpeg_path', ''))
         except Exception as e:
-            print(f"Erreur lors du chargement des paramètres: {e}")
+            print("Erreur lors du chargement des paramètres: " + str(e))
 
     def show_config_if_needed(self):
-        ffmpeg_path_missing_in_config = not self.ffmpeg_path.get().strip()
-        ffmpeg_not_globally_available = not self._check_ffmpeg_global_availability()
+        no_ffmpeg_path = not self.ffmpeg_path.get().strip()
+        no_ffmpeg_global = not self._check_ffmpeg_global_availability()
 
-        if ffmpeg_path_missing_in_config and ffmpeg_not_globally_available:
+        if no_ffmpeg_path and no_ffmpeg_global:
             self.window.after(100, self.show_ffmpeg_info_screen)
         elif not os.path.exists(CONFIG_FILE):
             self.window.after(100, self.show_config_screen)
@@ -333,8 +336,8 @@ class YouTubeDownloader:
                 self.quality_menu.configure(values=["720p", "1080p", "480p", "360p", "Meilleure qualité"])
     
     def check_available_qualities(self):
-        url = self.url.get().strip()
-        if not url or not url.startswith(("https://www.youtube.com/", "https://youtu.be/")):
+        yt_url = self.url.get().strip()
+        if not yt_url or not yt_url.startswith(("https://www.youtube.com/", "https://youtu.be/")):
             messagebox.showwarning("Attention", "Veuillez entrer une URL YouTube valide")
             return
         
@@ -347,31 +350,31 @@ class YouTubeDownloader:
         
         def check_thread():
             try:
-                ydl_opts = {
+                opts = {
                     'quiet': True,
                     'no_warnings': True,
                 }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    formats = info.get('formats', [])
-                    available_heights = set()
-                    for fmt in formats:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    data = ydl.extract_info(yt_url, download=False)
+                    fmts = data.get('formats', [])
+                    heights = set()
+                    for fmt in fmts:
                         height = fmt.get('height')
                         if height and fmt.get('vcodec') != 'none':
-                            available_heights.add(height)
-                    sorted_heights = sorted(available_heights, reverse=True)
-                    quality_list = [f"{h}p" for h in sorted_heights]
-                    self.window.after(0, lambda: self.update_quality_menu(quality_list))
-                    self.log(f"✓ Qualités disponibles: {', '.join(quality_list)}")
+                            heights.add(height)
+                    sorted_h = sorted(heights, reverse=True)
+                    q_list = [f"{h}p" for h in sorted_h]
+                    self.window.after(0, lambda: self.update_quality_menu(q_list))
+                    self.log(f"✓ Qualités disponibles: {', '.join(q_list)}")
             except Exception as e:
-                error_str = str(e)
-                if 'requested_formats' not in error_str:
-                    self.log(f"❌ Erreur lors de la vérification: {error_str}")
+                err = str(e)
+                if 'requested_formats' not in err:
+                    self.log(f"❌ Erreur lors de la vérification: {err}")
                 self.window.after(0, lambda: self.update_quality_menu([]))
         
-        thread = threading.Thread(target=check_thread)
-        thread.daemon = True
-        thread.start()
+        t = threading.Thread(target=check_thread)
+        t.daemon = True
+        t.start()
     
     def update_quality_menu(self, qualities):
         self.available_qualities = qualities
@@ -398,57 +401,63 @@ class YouTubeDownloader:
         self.message_queue.put(("progress", (value, text)))
 
     def process_messages(self):
+        # je vide la queue des logs/progress a chaque tick
         try:
             while True:
-                msg_type, content = self.message_queue.get_nowait()
-                if msg_type == "log":
-                    self.log_text.insert(tk.END, content + "\n")
+                kind, payload = self.message_queue.get_nowait()
+                if kind == "log":
+                    self.log_text.insert(tk.END, payload + "\n")
                     self.log_text.see(tk.END)
-                elif msg_type == "progress":
-                    value, text = content
-                    self.progress_bar.set(value)
-                    if text:
-                        self.progress_label.configure(text=text)
+                elif kind == "progress":
+                    val, txt = payload
+                    self.progress_bar.set(val)
+                    if txt:
+                        self.progress_label.configure(text=txt)
         except queue.Empty:
             pass
         self.window.after(100, self.process_messages)
 
     def download_with_ytdlp(self, url):
+        # Sécurité de base : si yt-dlp n'est pas là, on coupe tout
         if not YT_DLP_AVAILABLE:
             return False
         
         try:
-            download_path = self.download_path.get()
+            dl_path = self.download_path.get()
+            
+            # je prepare tout avt le telechargement pour eviter les bugs
             if self.format_var.get() == "mp3":
-                format_selector = "bestaudio/best"
-                postprocessors = [{
+                fmt = "bestaudio/best"
+                post = [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }]
             else:
-                quality = self.quality_var.get()
-                if quality == "Meilleure qualité":
-                    format_selector = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                q = self.quality_var.get()
+                if q == "Meilleure qualité":
+                    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
                 else:
                     try:
-                        height = int(quality.replace('p', ''))
-                        format_selector = (
-                            f"bestvideo[height={height}][ext=mp4]+bestaudio[ext=m4a]/"
-                            f"best[height={height}][ext=mp4]/"
-                            f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
-                            f"best[height<={height}][ext=mp4]"
+                        h = int(q.replace('p', ''))
+                        fmt = (
+                            f"bestvideo[height={h}][ext=mp4]+bestaudio[ext=m4a]/"
+                            f"best[height={h}][ext=mp4]/"
+                            f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/"
+                            f"best[height<={h}][ext=mp4]"
                         )
                     except ValueError:
-                        format_selector = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-                postprocessors = []
-            
-            ydl_opts = {
-                'format': format_selector,
-                'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
+                        # si la qualite est bizarre je prends une valeur safe
+                        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                post = []
+
+            # options envoyees a yt-dlp
+            opts = {
+                'format': fmt,
+                'outtmpl': os.path.join(dl_path, '%(title)s.%(ext)s'),
                 'quiet': False,
                 'no_warnings': False,
-                'postprocessors': postprocessors,
+                'postprocessors': post,
                 'progress_hooks': [self.ytdlp_progress_hook],
                 'ignoreerrors': False,
                 'logger': YTDLLogger(self.log),
@@ -456,68 +465,71 @@ class YouTubeDownloader:
                 'no_playlist': True,
             }
 
-            ffmpeg_location = self.ffmpeg_path.get().strip()
-            if ffmpeg_location:
-                ydl_opts['ffmpeg_location'] = ffmpeg_location
+            # si ffmpeg est renseigne je le passe ici
+            ffmpeg_loc = self.ffmpeg_path.get().strip()
+            if ffmpeg_loc:
+                opts['ffmpeg_location'] = ffmpeg_loc
 
             if self.format_var.get() == "mp4":
-                ydl_opts['merge_output_format'] = 'mp4'
+                opts['merge_output_format'] = 'mp4'
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                video_title = 'Vidéo'
+            # go telechargement
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                vid_title = 'Vidéo'
+                
+                # je tente de recup le titre pour un log plus clean
                 try:
-                    info = ydl.extract_info(url, download=False)
-                    video_title = info.get('title', url)
-                except (KeyError, TypeError) as info_error:
-                    error_str = str(info_error)
-                    if 'requested_formats' in error_str:
-                        pass
-                    else:
-                        pass
-                except Exception as info_error:
+                    data = ydl.extract_info(url, download=False)
+                    vid_title = data.get('title', url)
+                except Exception:
+                    # si ca rate je bloque pas le download
                     pass
                 
-                self.log(f"Téléchargement de : {video_title}")
+                self.log(f"Téléchargement de : {vid_title}")
                 
                 try:
                     ydl.download([url])
-                    self.log(f"✓ {video_title} téléchargé avec succès avec yt-dlp!")
+                    self.log(f"✓ {vid_title} téléchargé avec succès avec yt-dlp!")
                     return True
-                except Exception as download_error:
-                    error_str = str(download_error)
-                    if "could not find codec" in error_str.lower() or \
-                       "postprocessing" in error_str.lower() or \
-                       "error splitting" in error_str.lower() or \
-                       "ffmpeg" in error_str.lower():
-                          
-                          self.log(f"❌ Erreur de post-traitement (probablement FFmpeg): {error_str}")
-                          self.log("💡 Astuce: Assurez-vous que FFmpeg est installé et accessible dans votre PATH.")
-                          self.log("         Vous pouvez le télécharger depuis https://ffmpeg.org/download.html")
-                          
-                          import glob
-                          download_path_check = self.download_path.get()
-                          pattern_check = os.path.join(download_path_check, f"{video_title}.*")
-                          existing_files = glob.glob(pattern_check)
-                          
-                          media_files = [f for f in existing_files if os.path.isfile(f) and 
-                                         (f.endswith('.mp4') or f.endswith('.mp3') or f.endswith('.webm') or f.endswith('.m4a')) and
-                                         os.path.getsize(f) > 1024]
-                          
-                          if media_files:
-                              self.log(f"⚠️ Un fichier média brut a été téléchargé : {os.path.basename(media_files[0])}")
-                              self.log("   Cependant, le post-traitement (fusion/conversion) a échoué.")
-                              return True
-                          else:
-                              self.log("❌ Aucun fichier média brut n'a été trouvé après l'échec du post-traitement.")
-                              return False
+                    
+                except Exception as dl_err:
+                    err = str(dl_err).lower()
+                    
+                    # je check si ca vient de ffmpeg
+                    ffmpeg_errs = ["could not find codec", "postprocessing", "error splitting", "ffmpeg"]
+                    
+                    if any(k in err for k in ffmpeg_errs):
+                        self.log(f"❌ Erreur de post-traitement (probablement FFmpeg): {str(dl_err)}")
+                        self.log("💡 Astuce: Assurez-vous que FFmpeg est installé et accessible dans votre PATH.")
+                        self.log("         Vous pouvez le télécharger depuis https://ffmpeg.org/download.html")
+                        
+                        # je verifie si un fichier brut existe deja
+                        pat = os.path.join(dl_path, f"{vid_title}.*")
+                        files = glob.glob(pat)
+                        
+                        media = [f for f in files if os.path.isfile(f) and 
+                                 (f.endswith('.mp4') or f.endswith('.mp3') or f.endswith('.webm') or f.endswith('.m4a')) and
+                                 os.path.getsize(f) > 1024]
+                        
+                        if media:
+                            self.log(f"⚠️ Un fichier média brut a été téléchargé : {os.path.basename(media[0])}")
+                            self.log("  Cependant, le post-traitement (fusion/conversion) a échoué.")
+                            return True
+                        else:
+                            self.log("❌ Aucun fichier média brut n'a été trouvé après l'échec du post-traitement.")
+                            return False
                     else:
-                        raise download_error
+                        # si c pas ffmpeg je laisse remonter l'erreur
+                        raise dl_err
 
         except Exception as e:
-            error_str = str(e)
-            if "'requested_formats'" in error_str or "requested_formats" in error_str:
+            err = str(e)
+            # faux positif connu de yt-dlp
+            if "requested_formats" in err:
+                # cas bizarre yt-dlp, je force ok pour pas bloquer
                 return True
-            self.log(f"❌ Erreur avec yt-dlp: {error_str}")
+                
+            self.log(f"❌ Erreur avec yt-dlp: {err}")
             return False
                 
     def _check_ffmpeg_global_availability(self):
@@ -528,28 +540,29 @@ class YouTubeDownloader:
             return False
 
     def ytdlp_progress_hook(self, d):
-         try:
-             if d['status'] == 'downloading':
-                 if 'total_bytes' in d and d['total_bytes']:
-                     percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
-                     self.update_progress(percent / 100, f"Téléchargement: {percent:.1f}%")
-                 elif 'downloaded_bytes' in d:
-                     self.update_progress(0.5, "Téléchargement en cours...")
-                 else:
-                     self.update_progress(0.3, "Téléchargement en cours...")
-             elif d['status'] == 'finished':
-                 self.update_progress(1.0, "Téléchargement terminé!")
-         except:
-             pass
+        try:
+            if d['status'] == 'downloading':
+                if 'total_bytes' in d and d['total_bytes']:
+                    percent = (d['downloaded_bytes'] / d['total_bytes']) * 100
+                    self.update_progress(percent / 100, f"Téléchargement: {percent:.1f}%")
+                elif 'downloaded_bytes' in d:
+                    self.update_progress(0.5, "Téléchargement en cours...")
+                else:
+                    self.update_progress(0.3, "Téléchargement en cours...")
+            elif d['status'] == 'finished':
+                self.update_progress(1.0, "Téléchargement terminé!")
+        except:
+            # si y a une erreur dans le hook je bloque pas le download
+            pass
      
     def download_video(self, url, max_retries=3):
         if not YT_DLP_AVAILABLE:
             self.log("❌ yt-dlp n'est pas installé. Installez-le avec: pip install yt-dlp")
             return False
         
-        for attempt in range(max_retries):
-            if attempt > 0:
-                self.log(f"Tentative {attempt + 1}/{max_retries}...")
+        for tr in range(max_retries):
+            if tr > 0:
+                self.log(f"Tentative {tr + 1}/{max_retries}...")
                 time.sleep(2)
             
             if self.download_with_ytdlp(url):
@@ -559,83 +572,84 @@ class YouTubeDownloader:
 
     def get_playlist_videos_with_api(self, playlist_url):
         try:
-            playlist_id_match = re.search(r'list=([a-zA-Z0-9_-]+)', playlist_url)
-            if not playlist_id_match:
+            pid_match = re.search(r'list=([a-zA-Z0-9_-]+)', playlist_url)
+            if not pid_match:
                 self.log("❌ URL de playlist invalide")
                 return []
-            playlist_id = playlist_id_match.group(1)
-            api_key = self.api_key.get().strip()
-            if not api_key:
+            pid = pid_match.group(1)
+            key = self.api_key.get().strip()
+            if not key:
+                # pas de clé api -> fallback yt-dlp
                 self.log("⚠️ Aucune clé API fournie. Tentative sans API...")
                 return self.extract_playlist_videos(playlist_url)
             self.log("Récupération des vidéos de la playlist via l'API YouTube...")
-            playlist_url_api = f"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={playlist_id}&key={api_key}"
-            playlist_response = requests.get(playlist_url_api)
-            playlist_response.raise_for_status()
-            playlist_data = playlist_response.json()
+            pl_api_url = f"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={pid}&key={key}"
+            pl_res = requests.get(pl_api_url)
+            pl_res.raise_for_status()
+            pl_data = pl_res.json()
             
-            if 'error' in playlist_data:
-                error_info = playlist_data['error']
-                error_message = error_info.get('message', 'Erreur inconnue')
-                self.log(f"❌ Erreur API YouTube: {error_message}")
+            if 'error' in pl_data:
+                err_info = pl_data['error']
+                err_msg = err_info.get('message', 'Erreur inconnue')
+                self.log(f"❌ Erreur API YouTube: {err_msg}")
                 return []
             
-            if 'items' not in playlist_data or not playlist_data['items']:
+            if 'items' not in pl_data or not pl_data['items']:
                 self.log("❌ Playlist non trouvée ou inaccessible")
                 return []
             
             try:
-                playlist_title = playlist_data['items'][0]['snippet']['title']
-                self.log(f"Playlist trouvée : {playlist_title}")
+                pl_title = pl_data['items'][0]['snippet']['title']
+                self.log(f"Playlist trouvée : {pl_title}")
             except (KeyError, IndexError, TypeError) as e:
                 self.log(f"⚠️ Erreur lors de la récupération du titre de la playlist: {e}")
                 self.log("Continuation du téléchargement...")
-            video_urls = []
-            next_page_token = None
+            vid_urls = []
+            next_token = None
             while True:
-                if next_page_token:
-                    playlist_items_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId={playlist_id}&pageToken={next_page_token}&key={api_key}"
+                if next_token:
+                    items_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId={pid}&pageToken={next_token}&key={key}"
                 else:
-                    playlist_items_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId={playlist_id}&key={api_key}"
-                playlist_items_response = requests.get(playlist_items_url)
-                playlist_items_response.raise_for_status()
-                playlist_items_data = playlist_items_response.json()
+                    items_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId={pid}&key={key}"
+                items_res = requests.get(items_url)
+                items_res.raise_for_status()
+                items_data = items_res.json()
                 
-                if 'error' in playlist_items_data:
-                    error_info = playlist_items_data['error']
-                    error_message = error_info.get('message', 'Erreur inconnue')
-                    self.log(f"❌ Erreur API YouTube: {error_message}")
+                if 'error' in items_data:
+                    err_info = items_data['error']
+                    err_msg = err_info.get('message', 'Erreur inconnue')
+                    self.log(f"❌ Erreur API YouTube: {err_msg}")
                     break
                 
-                if 'items' not in playlist_items_data:
+                if 'items' not in items_data:
                     self.log("❌ Erreur lors de la récupération des vidéos de la playlist")
                     break
                 
-                if not isinstance(playlist_items_data['items'], list):
+                if not isinstance(items_data['items'], list):
                     self.log("❌ Format de données invalide dans la réponse de l'API")
                     break
                 
-                if not playlist_items_data['items']:
+                if not items_data['items']:
                     break
                 
-                for item in playlist_items_data['items']:
+                for item in items_data['items']:
                     try:
                         if 'snippet' not in item or 'resourceId' not in item['snippet']:
                             continue
-                        video_id = item['snippet']['resourceId']['videoId']
-                        if not video_id:
+                        vid_id = item['snippet']['resourceId']['videoId']
+                        if not vid_id:
                             continue
-                        video_url = f"https://www.youtube.com/watch?v={video_id}"
-                        video_urls.append(video_url)
+                        vid_url = f"https://www.youtube.com/watch?v={vid_id}"
+                        vid_urls.append(vid_url)
                     except (KeyError, TypeError) as e:
                         self.log(f"⚠️ Erreur lors du traitement d'un élément de la playlist: {e}")
                         continue
-                if 'nextPageToken' in playlist_items_data:
-                    next_page_token = playlist_items_data['nextPageToken']
+                if 'nextPageToken' in items_data:
+                    next_token = items_data['nextPageToken']
                 else:
                     break
-            self.log(f"✓ {len(video_urls)} vidéos trouvées dans la playlist")
-            return video_urls
+            self.log(f"✓ {len(vid_urls)} vidéos trouvées dans la playlist")
+            return vid_urls
         except Exception as e:
             self.log(f"❌ Erreur lors de la récupération des vidéos via l'API: {str(e)}")
             self.log("Tentative sans API...")
@@ -644,42 +658,42 @@ class YouTubeDownloader:
     def extract_playlist_videos(self, playlist_url):
         self.log("Récupération des vidéos de la playlist via yt-dlp (mode fallback)...")
         try:
-            ydl_opts = {
+            opts = {
                 'quiet': True,
                 'extract_flat': True,
                 'force_generic_extractor': True,
                 'noplaylist': False,
                 'logger': YTDLLogger(self.log),
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(playlist_url, download=False)
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                data = ydl.extract_info(playlist_url, download=False)
                 
-            video_urls = []
-            if 'entries' in info:
-                for entry in info['entries']:
+            vid_urls = []
+            if 'entries' in data:
+                for entry in data['entries']:
                     if 'url' in entry and entry.get('url'):
-                        video_urls.append(entry['url'])
+                        vid_urls.append(entry['url'])
             
-            if not video_urls:
+            if not vid_urls:
                 self.log("❌ Aucune vidéo trouvée dans la playlist")
                 return []
-            self.log(f"✓ {len(video_urls)} vidéos trouvées dans la playlist")
-            return video_urls
+            self.log(f"✓ {len(vid_urls)} vidéos trouvées dans la playlist")
+            return vid_urls
         except Exception as e:
             self.log(f"❌ Erreur lors de l'extraction des vidéos de la playlist: {str(e)}")
             return []
 
     def download_playlist(self, url):
         try:
-            video_urls = self.get_playlist_videos_with_api(url)
-            if not video_urls:
+            vid_urls = self.get_playlist_videos_with_api(url)
+            if not vid_urls:
                 self.log("❌ Aucune vidéo trouvée dans la playlist")
                 return False
-            self.log(f"Téléchargement de la playlist avec {len(video_urls)} vidéos")
-            total_videos = len(video_urls)
-            for i, video_url in enumerate(video_urls, 1):
-                self.update_progress(i/total_videos, f"Téléchargement {i}/{total_videos}")
-                self.download_video(video_url)
+            self.log(f"Téléchargement de la playlist avec {len(vid_urls)} vidéos")
+            total = len(vid_urls)
+            for i, vid_url in enumerate(vid_urls, 1):
+                self.update_progress(i/total, f"Téléchargement {i}/{total}")
+                self.download_video(vid_url)
             self.update_progress(1, "Téléchargement terminé!")
             return True
         except Exception as e:
@@ -688,34 +702,32 @@ class YouTubeDownloader:
             return False
 
     def start_download(self):
-        url = self.url.get().strip()
-        if not url:
+        yt_url = self.url.get().strip()
+        if not yt_url:
             messagebox.showerror("Erreur", "Veuillez entrer une URL YouTube")
             return
-        if not re.match(r"^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+", url):
+        if not re.match(r"^(https?://)?(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/.+", yt_url):
             messagebox.showerror("Erreur", "Veuillez entrer une URL YouTube valide.")
             return
-        if self.is_playlist.get():
-            pass
-        download_dir = self.download_path.get()
-        if not os.path.exists(download_dir):
+        dl_dir = self.download_path.get()
+        if not os.path.exists(dl_dir):
             try:
-                os.makedirs(download_dir)
-                self.log(f"Dossier créé : {download_dir}")
+                os.makedirs(dl_dir)
+                self.log(f"Dossier créé : {dl_dir}")
             except Exception as e:
                 messagebox.showerror("Erreur", f"Impossible de créer le dossier de téléchargement : {str(e)}")
                 return
         self.download_button.configure(state="disabled")
         self.update_progress(0, "")
+        # je lance un thread pour pas freeze l'interface
         def download_thread():
             try:
                 if self.is_playlist.get():
-                    self.download_playlist(url)
+                    self.download_playlist(yt_url)
                 else:
-                    self.download_video(url)
+                    self.download_video(yt_url)
             except Exception as e:
                 self.log(f"❌ Erreur critique lors du téléchargement: {str(e)}")
-                import traceback
                 self.log(f"Détails: {traceback.format_exc()}")
             finally:
                 self.message_queue.put(("progress", (0, "")))
